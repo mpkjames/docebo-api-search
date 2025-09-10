@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<!-- This file was created with the assistance of an Google Gemini 2.5 Pro AI model. -->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Docebo API Searcher</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        html {
+            scroll-behavior: smooth;
+        }
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .spinner {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border-left-color: #09f;
+            animation: spin 1s ease infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .active-filter-btn {
+            background-color: #2563eb; /* Tailwind's blue-600 */
+            color: white;
+        }
+        .endpoint-details {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.5s ease-out;
+        }
+        .endpoint-details.expanded {
+            max-height: 3500px; /* Increased max-height for potentially long schemas */
+            transition: max-height 0.5s ease-in;
+        }
+        .param-table {
+            table-layout: fixed;
+            width: 100%;
+        }
+        .param-table td {
+            word-wrap: break-word;
+        }
+        /* Always-visible scrollbar for code blocks */
+        .code-block-container pre::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .code-block-container pre::-webkit-scrollbar-track {
+            background: #2d3748; /* gray-800 */
+        }
+        .code-block-container pre::-webkit-scrollbar-thumb {
+            background-color: #4a5568; /* gray-600 */
+            border-radius: 4px;
+        }
+         .code-block-container pre::-webkit-scrollbar-thumb:hover {
+            background-color: #718096; /* gray-500 */
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 md:p-8">
+        <div class="bg-white rounded-2xl shadow-lg p-8">
+            <h1 class="text-3xl font-bold text-gray-900 mb-2">Docebo API Searcher</h1>
+            <p class="text-gray-600 mb-6">Enter the base URL for your Docebo instance to discover available API services and their endpoints.</p>
+
+            <div class="flex flex-col sm:flex-row gap-4 mb-8">
+                <input type="text" id="baseUrlInput" class="flex-grow p-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="e.g., mj-michael-james.docebosaas.com" value="mj-michael-james.docebosaas.com">
+                <button id="fetchButton" class="bg-blue-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition duration-300 ease-in-out transform hover:scale-105">
+                    Fetch API Endpoints
+                </button>
+            </div>
+            
+            <div id="view-toggle-container" class="hidden flex items-center justify-start gap-4 mb-6">
+                <h3 class="text-lg font-semibold text-gray-800">View Mode:</h3>
+                <div id="view-toggle-switch" class="relative flex items-center rounded-lg bg-gray-200 p-1 w-40">
+                    <div id="view-toggle-indicator" class="absolute top-1 left-1 h-[calc(100%-0.5rem)] w-[calc(50%-0.25rem)] bg-white rounded-md shadow transition-transform duration-300 ease-in-out"></div>
+                    <button id="simpleViewBtn" class="relative w-1/2 py-1 text-sm font-semibold text-blue-600 z-10 transition-colors">Simple</button>
+                    <button id="detailedViewBtn" class="relative w-1/2 py-1 text-sm font-semibold text-gray-600 z-10 transition-colors">Detailed</button>
+                </div>
+            </div>
+
+            <div id="detailed-view-warning" class="hidden text-sm text-amber-800 bg-amber-100 p-3 rounded-lg -mt-2 mb-4">
+                <strong>Heads Up:</strong> Detailed view is an experimental feature and may be slower to render, especially with an unfiltered list of endpoints. For the best experience, try filtering your search in 'Simple' mode first, then switch to 'Detailed' view.
+            </div>
+
+            <div id="nav-container" class="hidden">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="text-lg font-semibold text-gray-800">Jump to...</h3>
+                    <div class="flex gap-2">
+                       <button id="sortAZButton" title="Sort services alphabetically" class="text-xs font-semibold py-1 px-3 rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 transition disabled:opacity-50 disabled:cursor-not-allowed">Sort A-Z</button>
+                       <button id="resetSortButton" title="Reset to original sort order" class="text-xs font-semibold py-1 px-3 rounded-full bg-blue-100 text-blue-700 hover:bg-blue-200 transition disabled:opacity-50 disabled:cursor-not-allowed">Reset</button>
+                    </div>
+               </div>
+                <div id="nav-links" class="flex flex-wrap gap-2 pb-4 border-b border-gray-200 mb-6"></div>
+            </div>
+
+            <div id="search-container" class="hidden relative my-6">
+                <input type="search" id="searchInput" class="w-full p-3 pl-10 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition" placeholder="Filter by URL or description...">
+                <div class="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                    <svg class="w-5 h-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+                <button id="clearSearchButton" class="hidden absolute inset-y-0 right-0 flex items-center pr-3 text-gray-500 hover:text-gray-800">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+                </button>
+            </div>
+            <div id="search-results-summary" class="hidden -mt-2 mb-4 text-gray-600 text-sm"></div>
+
+            <div id="expand-collapse-container" class="hidden flex justify-end items-center gap-2 mb-4">
+                <button id="resetFiltersButton" class="bg-blue-100 text-blue-700 text-xs font-semibold py-1 px-3 rounded-full hover:bg-blue-200 transition disabled:opacity-50 disabled:cursor-not-allowed" disabled>Reset Filters</button>
+                <button id="expandAllButton" class="bg-blue-100 text-blue-700 text-xs font-semibold py-1 px-3 rounded-full hover:bg-blue-200 transition disabled:opacity-50 disabled:cursor-not-allowed">Expand All</button>
+                <button id="collapseAllButton" class="bg-blue-100 text-blue-700 text-xs font-semibold py-1 px-3 rounded-full hover:bg-blue-200 transition disabled:opacity-50 disabled:cursor-not-allowed">Collapse All</button>
+            </div>
+
+            <div id="results" class="space-y-6"></div>
+            
+            <div id="errorBox" class="hidden mt-6 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded-lg" role="alert">
+                <strong class="font-bold">Error:</strong>
+                <span class="block sm:inline" id="errorMessage"></span>
+            </div>
+        </div>
+    </div>
+
+    <button id="to-top-button" title="Go to top" class="hidden fixed bottom-8 right-8 bg-blue-600 text-white rounded-full p-3 shadow-lg hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-300 transition-opacity duration-300">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M5 15l7-7 7 7" />
+        </svg>
+    </button>
+
+    <script>
+        const fetchButton = document.getElementById('fetchButton');
+        const resultsDiv = document.getElementById('results');
+        const baseUrlInput = document.getElementById('baseUrlInput');
+        const errorBox = document.getElementById('errorBox');
+        const errorMessage = document.getElementById('errorMessage');
+        const navContainer = document.getElementById('nav-container');
+        const navLinksContainer = document.getElementById('nav-links');
+        const toTopButton = document.getElementById('to-top-button');
+        const searchContainer = document.getElementById('search-container');
+        const searchInput = document.getElementById('searchInput');
+        const clearSearchButton = document.getElementById('clearSearchButton');
+        const searchResultsSummary = document.getElementById('search-results-summary');
+        const expandAllButton = document.getElementById('expandAllButton');
+        const collapseAllButton = document.getElementById('collapseAllButton');
+        const expandCollapseContainer = document.getElementById('expand-collapse-container');
+        const viewToggleContainer = document.getElementById('view-toggle-container');
+        const simpleViewBtn = document.getElementById('simpleViewBtn');
+        const detailedViewBtn = document.getElementById('detailedViewBtn');
+        const detailedViewWarning = document.getElementById('detailed-view-warning');
+        const resetFiltersButton = document.getElementById('resetFiltersButton');
+        const sortAZButton = document.getElementById('sortAZButton');
+        const resetSortButton = document.getElementById('resetSortButton');
+
+        let allServiceDetails = [];
+        let originalServiceDetails = [];
+        let isDetailedView = false; // Default to simple view
+        let activeMethodFilters = {}; // To persist method filters across view changes
+        let currentSortState = 'original';
+
+        fetchButton.addEventListener('click', async () => {
+            const baseUrl = baseUrlInput.value.trim();
+            if (!baseUrl) {
+                showError("Please enter a valid Docebo base URL.");
+                return;
+            }
+
+            resultsDiv.innerHTML = '<div class="flex justify-center p-10"><div class="spinner"></div></div>';
+            navContainer.classList.add('hidden');
+            searchContainer.classList.add('hidden');
+            searchResultsSummary.classList.add('hidden');
+            expandCollapseContainer.classList.add('hidden');
+            viewToggleContainer.classList.add('hidden');
+            detailedViewWarning.classList.add('hidden');
+            searchInput.value = '';
+            navLinksContainer.innerHTML = '';
+            activeMethodFilters = {}; // Reset filters on new fetch
+            fetchButton.disabled = true;
+            fetchButton.classList.add('opacity-50', 'cursor-not-allowed');
+            updateResetButtonState();
+            hideError();
+
+            const corsProxy = 'https://corsproxy.io/?';
+            const servicesUrl = `${corsProxy}${encodeURIComponent(`https://${baseUrl}/manage/v1/site/microservices`)}`;
+
+            try {
+                const response = await fetch(servicesUrl);
+                if (!response.ok) throw new Error(`Failed to fetch services list. Status: ${response.status}`);
+                const servicesData = await response.json();
+                
+                if (!servicesData.data || servicesData.data.length === 0) {
+                    showError("No microservices found at this URL.");
+                    resultsDiv.innerHTML = '';
+                    return;
+                }
+                
+                const swaggerPromises = servicesData.data.map(service => 
+                    fetch(`${corsProxy}${encodeURIComponent(service.url)}`)
+                        .then(res => res.ok ? res.json() : null)
+                        .then(swaggerJson => ({ service, swaggerJson }))
+                        .catch(err => {
+                            console.error(`Error processing ${service.app}:`, err);
+                            return { service, swaggerJson: null };
+                        })
+                );
+
+                allServiceDetails = await Promise.all(swaggerPromises);
+                originalServiceDetails = [...allServiceDetails];
+                currentSortState = 'original';
+                updateSortButtonsState();
+                renderServices(allServiceDetails);
+                
+            } catch (error) {
+                console.error('An error occurred:', error);
+                showError(error.message || "An unknown error occurred.");
+                resultsDiv.innerHTML = '';
+            } finally {
+                fetchButton.disabled = false;
+                fetchButton.classList.remove('opacity-50', 'cursor-not-allowed');
+            }
+        });
+        
+        function renderServices(serviceDetailsToRender) {
+            resultsDiv.innerHTML = '';
+            navLinksContainer.innerHTML = '';
+            
+            const hasAnyServices = allServiceDetails.some(d => d.swaggerJson && Object.keys(d.swaggerJson.paths || {}).length > 0);
+            if (hasAnyServices) {
+                viewToggleContainer.classList.remove('hidden');
+                detailedViewWarning.classList.remove('hidden');
+                navContainer.classList.remove('hidden');
+                searchContainer.classList.remove('hidden');
+
+                // Build nav links from the master (potentially sorted) list
+                allServiceDetails.forEach(({ service, swaggerJson }) => {
+                    if (swaggerJson && Object.keys(swaggerJson.paths || {}).length > 0) {
+                        const serviceId = `service-${service.app}`;
+                        navLinksContainer.innerHTML += `<a href="#${serviceId}" class="bg-gray-200 hover:bg-gray-300 text-gray-800 font-medium py-2 px-4 rounded-lg transition capitalize">${service.app}</a>`;
+                    }
+                });
+            }
+
+            const validServices = serviceDetailsToRender.filter(d => d.swaggerJson && Object.keys(d.swaggerJson.paths || {}).length > 0);
+
+            if (validServices.length === 0) {
+                if (searchInput.value) {
+                    resultsDiv.innerHTML = '<p class="text-center text-gray-600">No API endpoints match your search term.</p>';
+                }
+                updateExpandCollapseButtonsState();
+                return;
+            }
+            
+            // Render service cards from the provided list (which could be filtered or sorted)
+            validServices.forEach(({ service, swaggerJson }) => {
+                const serviceId = `service-${service.app}`;
+                const card = document.createElement('div');
+                card.className = 'service-card bg-gray-50 border border-gray-200 rounded-xl p-6 scroll-mt-8';
+                card.id = serviceId;
+                
+                let apiCount = 0;
+                let endpointsHtml = '';
+                const uniqueMethods = new Set();
+                
+                const groupedEndpoints = {};
+                for (const path in swaggerJson.paths) {
+                    for (const method in swaggerJson.paths[path]) {
+                        const endpointInfo = swaggerJson.paths[path][method];
+                        uniqueMethods.add(method.toUpperCase());
+                        if (endpointInfo && Array.isArray(endpointInfo.tags) && endpointInfo.tags.length > 0) {
+                            const tag = endpointInfo.tags[0];
+                            if (!groupedEndpoints[tag]) groupedEndpoints[tag] = [];
+                            groupedEndpoints[tag].push({ 
+                                path, 
+                                method: method.toUpperCase(), 
+                                ...endpointInfo 
+                            });
+                        }
+                    }
+                }
+
+                const sortedGroupNames = Object.keys(groupedEndpoints).sort();
+                apiCount = Object.values(groupedEndpoints).reduce((sum, group) => sum + group.length, 0);
+
+                if (apiCount > 0) {
+                    endpointsHtml = sortedGroupNames.map(groupName => {
+                        groupedEndpoints[groupName].sort((a, b) => a.path.localeCompare(b.path));
+                        const pathList = groupedEndpoints[groupName].map(endpoint => {
+                            const methodColor = getMethodColor(endpoint.method);
+                            
+                            let detailsHtml = '';
+                            let chevronHtml = '';
+                            let cursorClass = '';
+
+                            if (isDetailedView) {
+                                const parametersHtml = buildParametersHtml(endpoint.parameters, swaggerJson);
+                                const responsesHtml = buildResponsesHtml(endpoint.responses, swaggerJson);
+                                detailsHtml = `
+                                <div class="endpoint-details border-t border-gray-200">
+                                    <div class="p-4 space-y-6">
+                                        ${parametersHtml}
+                                        ${responsesHtml}
+                                    </div>
+                                </div>`;
+                                chevronHtml = `<svg class="endpoint-chevron w-5 h-5 text-gray-500 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>`;
+                                cursorClass = 'cursor-pointer';
+                            }
+
+                            return `
+                            <li class="endpoint-item bg-gray-100 rounded-lg" data-method="${endpoint.method}">
+                                <div class="endpoint-header flex items-center justify-between p-3 ${cursorClass}">
+                                    <div class="flex items-center gap-3 flex-wrap">
+                                        <span class="font-bold text-xs uppercase px-2 py-1 rounded-md text-white text-center w-20 ${methodColor}">${endpoint.method}</span>
+                                        <span class="font-mono text-sm text-gray-800 break-all">${endpoint.path}</span>
+                                    </div>
+                                    ${chevronHtml}
+                                </div>
+                                <p class="text-gray-600 text-sm italic px-3 pb-3">${endpoint.summary || 'No description provided.'}</p>
+                                ${detailsHtml}
+                            </li>`;
+                        }).join('');
+                        return `<div class="subsection-container mt-6">
+                            <h3 class="text-xl font-semibold text-gray-700">${groupName}</h3>
+                            <ul class="space-y-2 mt-2 list-none pl-0">${pathList}</ul>
+                        </div>`;
+                    }).join('');
+                } else {
+                     endpointsHtml = '<p class="text-gray-500 mt-4">No endpoints found for this service.</p>';
+                }
+                
+                const currentFilter = activeMethodFilters[serviceId] || 'All';
+
+                const methodFilterButtons = ['All', ...Array.from(uniqueMethods).sort()].map(method => {
+                    const isActive = method === currentFilter;
+                    let finalClasses = '';
+                    if (isActive) {
+                        if (method === 'All') {
+                            finalClasses = 'active-filter-btn';
+                        } else {
+                            finalClasses = `${getMethodColor(method)} text-white`;
+                        }
+                    } else {
+                        finalClasses = 'bg-gray-200 hover:bg-gray-300 text-gray-800';
+                    }
+                    return `<button class="method-filter-btn px-3 py-1 text-sm font-medium rounded-md transition ${finalClasses}" data-filter-method="${method}">${method}</button>`;
+                }).join('');
+                
+                card.innerHTML = `
+                    <div class="card-header flex justify-between items-center cursor-pointer">
+                        <div>
+                            <h2 class="text-3xl font-bold capitalize text-gray-800">${service.app}</h2>
+                            <p class="api-count text-md text-gray-600 mt-1">${apiCount} API Endpoints</p>
+                        </div>
+                        <svg class="collapse-icon w-6 h-6 text-gray-500 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                    <div class="collapsible-content mt-4">
+                        <div class="method-filter-controls flex flex-wrap gap-2 border-b border-gray-200 pb-4">${methodFilterButtons}</div>
+                        <div class="endpoints-list mt-2">${endpointsHtml}</div>
+                    </div>`;
+                resultsDiv.appendChild(card);
+            });
+
+            addMethodFiltering();
+            addCollapseFunctionality();
+            if (isDetailedView) {
+                addEndpointExpansion();
+                addCopyFunctionality();
+            }
+            updateExpandCollapseButtonsState();
+            updateResetButtonState();
+
+            // Re-apply any active method filters
+            document.querySelectorAll('.service-card').forEach(card => {
+                const serviceId = card.id;
+                const filter = activeMethodFilters[serviceId] || 'All';
+                if (filter !== 'All') {
+                    applyMethodFilterToCard(card, filter);
+                }
+            });
+        }
+
+        function buildParametersHtml(parameters, swaggerJson) {
+            let html = '<h4 class="text-md font-semibold text-gray-700 mb-2">Parameters</h4>';
+            let contentHtml = '';
+
+            const bodyParam = (parameters || []).find(p => p.in === 'body');
+            const otherParams = (parameters || []).filter(p => p.in !== 'body');
+            
+            if(otherParams.length > 0) {
+                const paramsList = otherParams.map(p => `
+                    <tr class="border-b border-gray-200">
+                        <td class="py-2 pr-2 font-mono text-sm">${p.name} <span class="text-red-500">${p.required ? '*' : ''}</span></td>
+                        <td class="py-2 pr-2 text-sm capitalize text-gray-600">${p.in}</td>
+                        <td class="py-2 text-sm text-gray-600">${p.description || ''}</td>
+                    </tr>
+                `).join('');
+
+                contentHtml += `
+                    <div class="overflow-x-auto">
+                        <table class="param-table">
+                            <colgroup>
+                                <col class="w-1/4">
+                                <col class="w-1/6">
+                                <col>
+                            </colgroup>
+                            <thead class="text-xs text-gray-500 uppercase">
+                                <tr><th class="py-2 pr-2 font-semibold">Name</th><th class="py-2 pr-2 font-semibold">In</th><th class="py-2 font-semibold">Description</th></tr>
+                            </thead>
+                            <tbody>${paramsList}</tbody>
+                        </table>
+                    </div>
+                `;
+            }
+
+            if (bodyParam && bodyParam.schema) {
+                const example = generateExampleFromSchema(bodyParam.schema, swaggerJson);
+                contentHtml += `
+                    <h4 class="text-md font-semibold text-gray-700 mt-4 mb-2">Request Body</h4>
+                    <div class="code-block-container bg-gray-800 rounded-lg overflow-hidden">
+                        <div class="bg-gray-700/50 p-2 flex justify-end">
+                            <button title="Copy to clipboard" class="copy-btn p-1 bg-gray-600 rounded-md hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400 transition">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                            </button>
+                        </div>
+                        <pre class="text-white text-sm p-4 max-h-[500px] overflow-auto"><code>${syntaxHighlight(example)}</code></pre>
+                    </div>
+                `;
+            }
+
+            return html + contentHtml;
+        }
+
+
+        function getResponseCodeColor(code) {
+            const numericCode = parseInt(code, 10);
+            if (numericCode >= 200 && numericCode < 300) return 'text-green-600';
+            if (numericCode >= 300 && numericCode < 400) return 'text-yellow-600';
+            if (numericCode >= 400 && numericCode < 600) return 'text-red-600';
+            return 'text-gray-600';
+        }
+
+        function buildResponsesHtml(responses, swaggerJson) {
+            if (!responses || Object.keys(responses).length === 0) return '';
+            const responsesList = Object.entries(responses).map(([code, resp]) => {
+                const colorClass = getResponseCodeColor(code);
+                let schemaHtml = '';
+                if (resp.schema) {
+                    const example = generateExampleFromSchema(resp.schema, swaggerJson);
+                    if (example) {
+                        schemaHtml = `
+                            <tr class="bg-gray-50">
+                                <td colspan="2" class="py-2 px-1">
+                                    <details>
+                                        <summary class="text-xs text-gray-500 cursor-pointer">Example Response</summary>
+                                        <div class="code-block-container bg-gray-800 rounded-lg overflow-hidden mt-2">
+                                            <div class="bg-gray-700/50 p-2 flex justify-end">
+                                                <button title="Copy to clipboard" class="copy-btn p-1 bg-gray-600 rounded-md hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-gray-400 transition">
+                                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                                                </button>
+                                            </div>
+                                            <pre class="text-white text-sm p-4 max-h-[500px] overflow-auto"><code>${syntaxHighlight(example)}</code></pre>
+                                        </div>
+                                    </details>
+                                </td>
+                            </tr>
+                        `;
+                    }
+                }
+                return `
+                    <tr class="border-b border-gray-200">
+                        <td class="py-2 pr-2 font-mono text-sm font-bold ${colorClass}">${code}</td>
+                        <td class="py-2 text-sm text-gray-600">${resp.description || ''}</td>
+                    </tr>
+                    ${schemaHtml}
+                `;
+            }).join('');
+            
+            return `
+                <h4 class="text-md font-semibold text-gray-700 mb-2">Responses</h4>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-left">
+                         <colgroup>
+                            <col class="w-1/6">
+                            <col>
+                        </colgroup>
+                        <thead class="text-xs text-gray-500 uppercase">
+                            <tr><th class="py-2 pr-2 font-semibold">Code</th><th class="py-2 font-semibold">Description</th></tr>
+                        </thead>
+                        <tbody>${responsesList}</tbody>
+                    </table>
+                </div>
+            `;
+        }
+        
+        function addCopyFunctionality() {
+            const copyIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>`;
+            const copiedIconSvg = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg>`;
+
+            document.querySelectorAll('.copy-btn').forEach(button => {
+                button.addEventListener('click', () => {
+                    const container = button.closest('.code-block-container');
+                    const pre = container.querySelector('pre');
+                    const code = pre.querySelector('code');
+                    const textToCopy = code.innerText;
+
+                    const textArea = document.createElement('textarea');
+                    textArea.value = textToCopy;
+                    document.body.appendChild(textArea);
+                    textArea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textArea);
+
+                    button.innerHTML = copiedIconSvg;
+                    setTimeout(() => {
+                        button.innerHTML = copyIconSvg;
+                    }, 2000);
+                });
+            });
+        }
+
+        function resolveRef(ref, swaggerJson) {
+            if (!ref || !ref.startsWith('#/')) return null;
+            const parts = ref.substring(2).split('/');
+            let current = swaggerJson;
+            for (const part of parts) {
+                if (current && part in current) {
+                    current = current[part];
+                } else {
+                    return null;
+                }
+            }
+            return current;
+        }
+
+        function generateExampleFromSchema(schema, swaggerJson, visited = new Set()) {
+            if (!schema) return null;
+            if (schema.$ref) {
+                if (visited.has(schema.$ref)) return { /* Circular reference */ };
+                visited.add(schema.$ref);
+                const resolvedSchema = resolveRef(schema.$ref, swaggerJson);
+                const result = generateExampleFromSchema(resolvedSchema, swaggerJson, visited);
+                visited.delete(schema.$ref);
+                return result;
+            }
+
+            switch (schema.type) {
+                case 'object':
+                    const obj = {};
+                    if (schema.properties) {
+                        for (const key in schema.properties) {
+                            obj[key] = generateExampleFromSchema(schema.properties[key], swaggerJson, visited);
+                        }
+                    }
+                    return obj;
+                case 'array':
+                    if (schema.items) {
+                        return [generateExampleFromSchema(schema.items, swaggerJson, visited)];
+                    }
+                    return [];
+                case 'string':
+                    return 'string';
+                case 'integer':
+                case 'number':
+                    return 0;
+                case 'boolean':
+                    return true;
+                default:
+                    if (schema.properties) { // Handle objects without explicit type
+                        const defaultObj = {};
+                         for (const key in schema.properties) {
+                            defaultObj[key] = generateExampleFromSchema(schema.properties[key], swaggerJson, visited);
+                        }
+                        return defaultObj;
+                    }
+                    return null;
+            }
+        }
+        
+        function syntaxHighlight(json) {
+            if (json === null) return '<span class="text-gray-400">null</span>';
+            if (typeof json != 'string') {
+                json = JSON.stringify(json, undefined, 2);
+            }
+            json = json.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+            return json.replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?|\b(true|false|null)\b|-?\d+(?:\.\d*)?(?:[eE][+\-]?\d+)?)/g, function (match) {
+                let cls = 'text-blue-400'; // number
+                if (/^"/.test(match)) {
+                    if (/:$/.test(match)) {
+                        cls = 'text-cyan-400'; // key
+                    } else {
+                        cls = 'text-green-400'; // string
+                    }
+                } else if (/true|false/.test(match)) {
+                    cls = 'text-purple-400'; // boolean
+                } else if (/null/.test(match)) {
+                    cls = 'text-gray-400'; // null
+                }
+                return `<span class="${cls}">${match}</span>`;
+            });
+        }
+
+        function applyMethodFilterToCard(card, filter) {
+            let visibleCount = 0;
+            card.querySelectorAll('.subsection-container').forEach(subSection => {
+                let visibleEndpointsInSubsection = 0;
+                subSection.querySelectorAll('.endpoint-item').forEach(item => {
+                    const isVisible = (filter === 'All' || item.dataset.method === filter);
+                    item.classList.toggle('hidden', !isVisible);
+                    if (isVisible) {
+                        visibleEndpointsInSubsection++;
+                        visibleCount++;
+                    }
+                });
+                subSection.classList.toggle('hidden', visibleEndpointsInSubsection === 0);
+            });
+
+            const countDisplay = card.querySelector('.api-count');
+            const totalCount = card.querySelectorAll('.endpoint-item').length;
+            countDisplay.textContent = `${visibleCount} of ${totalCount} API Endpoint${totalCount !== 1 ? 's' : ''}`;
+        }
+
+        function addEndpointExpansion() {
+            document.querySelectorAll('.endpoint-header').forEach(header => {
+                header.addEventListener('click', () => {
+                    const details = header.parentElement.querySelector('.endpoint-details');
+                    const icon = header.querySelector('.endpoint-chevron');
+                    if (details && icon) {
+                        details.classList.toggle('expanded');
+                        icon.classList.toggle('rotate-180');
+
+                        // If the endpoint is now hidden (was just collapsed), reset its children
+                        if (!details.classList.contains('expanded')) {
+                            details.querySelectorAll('details[open]').forEach(detailElement => {
+                                detailElement.removeAttribute('open');
+                            });
+                        }
+                    }
+                });
+            });
+        }
+
+        function updateExpandCollapseButtonsState() {
+            const allCards = document.querySelectorAll('.service-card');
+            
+            if (allCards.length === 0) {
+                expandCollapseContainer.classList.add('hidden');
+                return;
+            }
+            
+            expandCollapseContainer.classList.remove('hidden');
+            const collapsedCards = document.querySelectorAll('.collapsible-content.hidden');
+            
+            expandAllButton.disabled = collapsedCards.length === 0;
+            collapseAllButton.disabled = collapsedCards.length === allCards.length;
+        }
+
+
+        function addCollapseFunctionality() {
+            document.querySelectorAll('.card-header').forEach(header => {
+                header.addEventListener('click', () => {
+                    const content = header.nextElementSibling;
+                    const icon = header.querySelector('.collapse-icon');
+                    content.classList.toggle('hidden');
+                    icon.classList.toggle('rotate-180');
+
+                    // If the card is now hidden (was just collapsed), reset all children
+                    if (content.classList.contains('hidden')) {
+                        content.querySelectorAll('.endpoint-details.expanded').forEach(details => {
+                            details.classList.remove('expanded');
+                        });
+                        content.querySelectorAll('.endpoint-chevron.rotate-180').forEach(chevron => {
+                            chevron.classList.remove('rotate-180');
+                        });
+                        // Also collapse 'Example Response' details
+                        content.querySelectorAll('details[open]').forEach(details => {
+                            details.removeAttribute('open');
+                        });
+                    }
+
+                    updateExpandCollapseButtonsState();
+                });
+            });
+        }
+
+        expandAllButton.addEventListener('click', () => {
+            document.querySelectorAll('.service-card').forEach(card => {
+                const content = card.querySelector('.collapsible-content');
+                const icon = card.querySelector('.collapse-icon');
+                content.classList.remove('hidden');
+                icon.classList.remove('rotate-180');
+            });
+            updateExpandCollapseButtonsState();
+        });
+
+        collapseAllButton.addEventListener('click', () => {
+            document.querySelectorAll('.service-card').forEach(card => {
+                const content = card.querySelector('.collapsible-content');
+                const icon = card.querySelector('.collapse-icon');
+                content.classList.add('hidden');
+                icon.classList.add('rotate-180');
+
+                // Also reset all children when collapsing all
+                content.querySelectorAll('.endpoint-details.expanded').forEach(details => {
+                    details.classList.remove('expanded');
+                });
+                content.querySelectorAll('.endpoint-chevron.rotate-180').forEach(chevron => {
+                    chevron.classList.remove('rotate-180');
+                });
+                content.querySelectorAll('details[open]').forEach(details => {
+                    details.removeAttribute('open');
+                });
+            });
+            updateExpandCollapseButtonsState();
+        });
+        
+        function addMethodFiltering() {
+            document.querySelectorAll('.service-card').forEach(card => {
+                const controls = card.querySelector('.method-filter-controls');
+                if (!controls) return;
+                
+                controls.addEventListener('click', (e) => {
+                    if (e.target.tagName !== 'BUTTON' || !e.target.dataset.filterMethod) return;
+                    const filter = e.target.dataset.filterMethod;
+                    const serviceId = card.id;
+
+                    // Store the state
+                    activeMethodFilters[serviceId] = filter;
+                    if (filter === 'All') {
+                        delete activeMethodFilters[serviceId];
+                    }
+                    
+                    controls.querySelectorAll('.method-filter-btn').forEach(btn => {
+                         btn.className = 'method-filter-btn px-3 py-1 text-sm font-medium rounded-md transition bg-gray-200 hover:bg-gray-300 text-gray-800';
+                    });
+                    
+                    e.target.classList.remove('bg-gray-200', 'hover:bg-gray-300', 'text-gray-800');
+                    if (filter === 'All') {
+                        e.target.classList.add('active-filter-btn');
+                    } else {
+                        e.target.classList.add(getMethodColor(filter), 'text-white');
+                    }
+
+                    applyMethodFilterToCard(card, filter);
+                    updateResetButtonState();
+                });
+            });
+        }
+
+        function updateResetButtonState() {
+            const hasActiveFilters = Object.keys(activeMethodFilters).length > 0;
+            resetFiltersButton.disabled = !hasActiveFilters;
+        }
+        
+        function updateSortButtonsState() {
+            if (currentSortState === 'original') {
+                sortAZButton.disabled = false;
+                resetSortButton.disabled = true;
+            } else { // 'az'
+                sortAZButton.disabled = true;
+                resetSortButton.disabled = false;
+            }
+        }
+
+        resetFiltersButton.addEventListener('click', () => {
+            activeMethodFilters = {};
+            document.querySelectorAll('.service-card').forEach(card => {
+                // Reset UI
+                const controls = card.querySelector('.method-filter-controls');
+                if (controls) {
+                    controls.querySelectorAll('.method-filter-btn').forEach(btn => {
+                        btn.className = 'method-filter-btn px-3 py-1 text-sm font-medium rounded-md transition bg-gray-200 hover:bg-gray-300 text-gray-800';
+                    });
+                    const allButton = controls.querySelector('[data-filter-method="All"]');
+                    if(allButton) {
+                        allButton.classList.remove('bg-gray-200', 'hover:bg-gray-300', 'text-gray-800');
+                        allButton.classList.add('active-filter-btn');
+                    }
+                }
+                // Re-apply "All" filter
+                applyMethodFilterToCard(card, 'All');
+            });
+            updateResetButtonState();
+        });
+
+        sortAZButton.addEventListener('click', () => {
+            allServiceDetails.sort((a, b) => a.service.app.localeCompare(b.service.app));
+            currentSortState = 'az';
+            updateSortButtonsState();
+            triggerSearchAndRender();
+        });
+
+        resetSortButton.addEventListener('click', () => {
+            allServiceDetails = [...originalServiceDetails];
+            currentSortState = 'original';
+            updateSortButtonsState();
+            triggerSearchAndRender();
+        });
+        
+        function triggerSearchAndRender() {
+            const searchTerm = searchInput.value.toLowerCase().trim();
+            let totalMatches = 0;
+            
+            // Note: We use the master `allServiceDetails` which is now sorted/unsorted correctly
+            const servicesToProcess = allServiceDetails;
+
+            const filteredServices = JSON.parse(JSON.stringify(servicesToProcess)).map(detail => {
+                    if (!detail.swaggerJson || !detail.swaggerJson.paths) return detail;
+                    const filteredPaths = {};
+                    for (const path in detail.swaggerJson.paths) {
+                        for (const method in detail.swaggerJson.paths[path]) {
+                            const endpoint = detail.swaggerJson.paths[path][method];
+                            const summary = (endpoint.summary || '').toLowerCase();
+                            const pathString = path.toLowerCase();
+                            if (pathString.includes(searchTerm) || summary.includes(searchTerm)) {
+                                if (!filteredPaths[path]) filteredPaths[path] = {};
+                                filteredPaths[path][method] = endpoint;
+                                totalMatches++;
+                            }
+                        }
+                    }
+                    detail.swaggerJson.paths = filteredPaths;
+                    return detail;
+                });
+            
+            if (searchTerm) {
+                searchResultsSummary.textContent = `Found ${totalMatches} matching endpoint${totalMatches !== 1 ? 's' : ''}.`;
+                searchResultsSummary.classList.remove('hidden');
+            } else {
+                searchResultsSummary.classList.add('hidden');
+            }
+
+            renderServices(filteredServices);
+        }
+
+        function setView(detailed) {
+            isDetailedView = detailed;
+
+            const indicator = document.getElementById('view-toggle-indicator');
+
+            if (isDetailedView) {
+                indicator.style.transform = 'translateX(100%)';
+                simpleViewBtn.classList.remove('text-blue-600');
+                simpleViewBtn.classList.add('text-gray-600');
+                detailedViewBtn.classList.add('text-blue-600');
+                detailedViewBtn.classList.remove('text-gray-600');
+            } else {
+                indicator.style.transform = 'translateX(0)';
+                detailedViewBtn.classList.remove('text-blue-600');
+                detailedViewBtn.classList.add('text-gray-600');
+                simpleViewBtn.classList.add('text-blue-600');
+                simpleViewBtn.classList.remove('text-gray-600');
+            }
+
+            triggerSearchAndRender();
+        }
+
+        simpleViewBtn.addEventListener('click', () => setView(false));
+        detailedViewBtn.addEventListener('click', () => setView(true));
+
+        searchInput.addEventListener('input', () => {
+            const searchTerm = searchInput.value.toLowerCase().trim();
+            clearSearchButton.classList.toggle('hidden', searchTerm.length === 0);
+            triggerSearchAndRender();
+        });
+
+        clearSearchButton.addEventListener('click', () => {
+            searchInput.value = '';
+            searchResultsSummary.classList.add('hidden');
+            clearSearchButton.classList.add('hidden');
+            activeMethodFilters = {}; // Also reset method filters
+            renderServices(allServiceDetails);
+        });
+
+        window.onscroll = () => {
+            toTopButton.classList.toggle('hidden', document.body.scrollTop <= 100 && document.documentElement.scrollTop <= 100);
+        };
+        
+        toTopButton.addEventListener('click', () => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+
+        function getMethodColor(method) {
+            const colors = { 'GET': 'bg-sky-600', 'POST': 'bg-green-600', 'PUT': 'bg-orange-500', 'DELETE': 'bg-red-600', 'PATCH': 'bg-yellow-500' };
+            return colors[method] || 'bg-gray-500';
+        }
+
+        function showError(message) {
+            errorMessage.textContent = message;
+            errorBox.classList.remove('hidden');
+        }
+
+        function hideError() {
+            errorBox.classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
+

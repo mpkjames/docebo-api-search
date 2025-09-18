@@ -2741,7 +2741,9 @@
 
                                 const propComment =
                                     showComment && description
-                                        ? `<span class="text-gray-500 code-comment">      // ${requiredStatusSpan} ${description}</span>`
+                                        ? `<span class="text-gray-500 code-comment">      // ${requiredStatusSpan} ${escapeHtml(
+                                              description
+                                          )}</span>`
                                         : "";
 
                                 let valueString;
@@ -3785,6 +3787,17 @@
                     PATCH: "bg-yellow-500",
                 };
                 return colors[method] || "bg-gray-500";
+            }
+
+            function escapeHtml(text) {
+                const map = {
+                    "&": "&amp;",
+                    "<": "&lt;",
+                    ">": "&gt;",
+                    '"': "&quot;",
+                    "'": "&#039;",
+                };
+                return text.replace(/[&<>"']/g, (m) => map[m]);
             }
 
             function showError(message) {
